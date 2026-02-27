@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { ClipboardEvent, FormEvent, useMemo, useState } from 'react'
 import { parseLocationInput, validateLocationInput } from '../lib/validation'
 import type { LocationInput, LocationPoint } from '../types/location'
 
@@ -12,22 +12,71 @@ const defaultInput: LocationInput = {
   color: '#ff3b30',
 }
 
+const parseCoordinatePair = (value: string): Pick<LocationInput, 'latitude' | 'longitude'> | null => {
+  const parts = value.split(',').map((part) => part.trim())
+  if (parts.length !== 2) {
+    return null
+  }
+
+  const latitude = Number(parts[0])
+  const longitude = Number(parts[1])
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null
+  }
+
+  return {
+    latitude: String(latitude),
+    longitude: String(longitude),
+  }
+}
+
+const normalizeLocationInput = (input: LocationInput): LocationInput => {
+  const latitudePair = parseCoordinatePair(input.latitude)
+  if (latitudePair) {
+    return { ...input, ...latitudePair }
+  }
+
+  const longitudePair = parseCoordinatePair(input.longitude)
+  if (longitudePair) {
+    return { ...input, ...longitudePair }
+  }
+
+  return input
+}
+
 export const LocationForm = ({ onAddLocation }: Props) => {
   const [input, setInput] = useState<LocationInput>(defaultInput)
   const [error, setError] = useState<string | null>(null)
 
-  const validationError = useMemo(() => validateLocationInput(input), [input])
+  const normalizedInput = useMemo(() => normalizeLocationInput(input), [input])
+  const validationError = useMemo(() => validateLocationInput(normalizedInput), [normalizedInput])
+
+  const handleCoordinatePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const coordinatePair = parseCoordinatePair(event.clipboardData.getData('text'))
+    if (!coordinatePair) {
+      return
+    }
+
+    event.preventDefault()
+    setInput((prev) => ({ ...prev, ...coordinatePair }))
+    setError(null)
+  }
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const submitError = validateLocationInput(input)
+    const submitInput = normalizeLocationInput(input)
+    const submitError = validateLocationInput(submitInput)
+
+    if (submitInput !== input) {
+      setInput(submitInput)
+    }
 
     if (submitError) {
       setError(submitError)
       return
     }
 
-    const parsed = parseLocationInput(input)
+    const parsed = parseLocationInput(submitInput)
     onAddLocation({
       id: crypto.randomUUID(),
       latitude: parsed.latitude,
@@ -47,6 +96,7 @@ export const LocationForm = ({ onAddLocation }: Props) => {
             type="number"
             step="any"
             value={input.latitude}
+            onPaste={handleCoordinatePaste}
             onChange={(event) => setInput((prev) => ({ ...prev, latitude: event.target.value }))}
             placeholder="e.g. 12.9716"
             required
@@ -59,6 +109,7 @@ export const LocationForm = ({ onAddLocation }: Props) => {
             type="number"
             step="any"
             value={input.longitude}
+            onPaste={handleCoordinatePaste}
             onChange={(event) => setInput((prev) => ({ ...prev, longitude: event.target.value }))}
             placeholder="e.g. 77.5946"
             required
